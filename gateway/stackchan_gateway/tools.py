@@ -23,9 +23,10 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from time import monotonic
 from typing import Any, Awaitable, Callable, Mapping
 
-from . import effects, mac as mac_helpers, model_qa, play
+from . import effects, mac as mac_helpers, model_qa, play, tool_access
 
 
 ToolHandler = Callable[[Mapping[str, str]], Awaitable[dict[str, Any]]]
@@ -75,6 +76,10 @@ class ToolSpec:
 
 
 _REGISTRY: dict[str, ToolSpec] = {}
+SHARED_TIMER_TOOLS = frozenset({
+    "computer_butler_pomodoro", "computer_butler_timer_set",
+    "computer_butler_timer_list", "computer_butler_timer_cancel",
+})
 
 _AUTONOMOUS_SAFE_INFO = {
     "computer_butler_time",
@@ -124,20 +129,27 @@ def get(name: str) -> ToolSpec | None:
     return _REGISTRY.get(name)
 
 
-async def execute(name: str, arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+async def execute(
+    name: str, arguments: Mapping[str, Any] | None, *, source: str | None = None
+) -> dict[str, Any]:
     spec = _REGISTRY.get(name)
     if spec is None:
         return {"error": f"unknown tool {name!r}"}
+    started = monotonic()
     try:
         coerced = _coerce_arguments(spec, arguments or {})
     except ValueError as exc:
-        return {"error": str(exc)}
-    try:
-        result = await spec.handler(coerced)
-    except Exception as exc:  # pragma: no cover - safety net
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        result = {"error": str(exc)}
+    else:
+        try:
+            result = await spec.handler(coerced)
+        except Exception as exc:  # pragma: no cover - safety net
+            result = {"error": f"{type(exc).__name__}: {exc}"}
     if not isinstance(result, dict):
-        return {"value": result}
+        result = {"value": result}
+    if source:
+        outcome = "blocked" if result.get("blocked") else "failed" if "error" in result else "ok"
+        await asyncio.to_thread(tool_access.record_event, source, name, outcome, started)
     return result
 
 
@@ -275,7 +287,10 @@ async def _tool_clipboard_write(args: Mapping[str, str]) -> dict[str, Any]:
 
 
 async def _tool_open_app(args: Mapping[str, str]) -> dict[str, Any]:
-    return await asyncio.to_thread(mac_helpers.open_app, args.get("name", ""))
+    app = await asyncio.to_thread(tool_access.find_app, args["name"])
+    if app is None:
+        return {"error": "应用未获授权，请在 Gateway 的应用白名单中添加。", "blocked": True}
+    return await asyncio.to_thread(mac_helpers.open_app, app["bundle_id"], app["name"])
 
 
 async def _tool_open_website(args: Mapping[str, str]) -> dict[str, Any]:
@@ -796,13 +811,13 @@ def _register_all() -> None:
     ))
     register(ToolSpec(
         name="computer_butler_open_app",
-        description="用 `open -a` 在 Mac 上启动一个 App。",
+        description="在 Mac 上启动应用白名单中的 App。",
         category="control",
         parameters={
             "name": {
                 "type": "string",
                 "required": True,
-                "description": "App 名称，如 Safari、Spotify、Notes。",
+                "description": "白名单中的 App 名称或 Bundle ID，如 Safari 或 Calculator。",
             },
         },
         handler=_tool_open_app,

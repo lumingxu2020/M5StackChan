@@ -19,7 +19,7 @@
 
 | 功能 | 示例 | 条件与行为 |
 | --- | --- | --- |
-| 打开应用 | “在 Mac 上打开 Google Chrome。” | App 须已安装，且可按名称识别。中文名称识别失败时可用英文名。 |
+| 打开应用 | “在 Mac 上打开 Google Chrome。” | App 须已安装，并出现在 Gateway 的「应用白名单」中。 |
 | Safari / Finder | “用 Safari 打开 apple.com。”“在 Finder 打开下载文件夹。” | 网页限 HTTP/HTTPS。Finder 支持桌面、下载、文稿、应用程序和个人文件夹。 |
 | 音量与媒体 | “把电脑音量调到 30。”“Spotify 下一首。” | 系统音量及播放取决于 Mac 当前环境，Spotify 功能要求安装对应应用。 |
 | 新建备忘录 | “新建备忘录，标题是待办，正文是周五交报告。” | 写入备忘录默认账户，可能随账户同步。macOS 可能要求自动化授权。 |
@@ -98,7 +98,13 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8765
 | `custom` | 使用 `STACKCHAN_AUTONOMOUS_ALLOWED_TOOLS` 指定工具。在面板保存开关时会写入该模式。 |
 | `all` | 向小智和 Gateway 对话模型提供所有工具，包括读写剪贴板、查询日历和控制 Mac。 |
 
-工具开关控制模型和小智可自动使用的工具。管理员的 `POST /v1/tools/{name}` 可直接调用完整工具列表。Gateway Token 为空时，大部分接口会跳过认证，只有多模型管理接口仍拒绝访问，因此应始终设置强随机 Token。使用本机监听地址。若确有局域网访问需求，请先配置受限访问和 TLS，再考虑对其他设备开放。
+工具开关控制模型和小智可自动使用的工具。管理员的 `POST /v1/tools/{name}` 可直接调用完整工具列表，打开应用仍会检查应用白名单。Gateway Token 为空时，大部分接口会跳过认证，多模型配置、应用白名单和调用记录需要事先配置 Token。使用本机监听地址。若确有局域网访问需求，请先配置受限访问和 TLS，再考虑对其他设备开放。
+
+### 应用白名单与调用记录
+
+在「应用白名单」里移除不需要的应用，或添加常用应用和自定义 Bundle ID，再点击「保存白名单」。保存后立即生效，留空会阻止所有通过「打开 App」工具启动应用的请求。开启语音启动应用需要同时启用 `computer_butler_open_app`。Safari 打开网页、Finder 打开文件夹和写备忘录是独立工具，需分别管理开关。
+
+「调用记录」会显示最近 200 条带工具执行结果的记录，包括调用时间、来源、工具、结果和耗时。它不会保存语音、执行参数、剪贴板、笔记、模型回复或凭据。应用规则与调用元数据存储在忽略提交的本机 `gateway/data/tool-access.sqlite3` 中。读取记录和修改白名单需要 Gateway Token。
 
 ### 本地与云端数据
 
@@ -124,6 +130,8 @@ FastAPI 的交互文档位于本机 `/docs`。受保护接口使用 `Authorizati
 | `POST /v1/chat/tools` | 带工具的问答，包含会话上下文和调用记录。 |
 | `POST /v1/tools/{name}` | 管理员直接调用指定工具。 |
 | `GET /v1/tool-policy` 与 `PUT /v1/tool-policy` | 查看和保存授权。写入时尝试重启已配置的桥接 LaunchAgent。 |
+| `GET /v1/app-allowlist` 与 `PUT /v1/app-allowlist` | 查看和保存允许启动的应用。 |
+| `GET /v1/tool-activity` | 读取最近的工具调用元数据。 |
 | `GET /v1/timers` 与 `DELETE /v1/timers/{timer_id}` | 列出和取消计时。 |
 | `GET /v1/memory` 与 `DELETE /v1/memory/{session_id}` | 查看和清除会话记忆。 |
 | `GET /v1/model-qa`、`PUT /v1/model-qa/{provider}`、`POST /v1/model-qa/{provider}/test` | 管理服务商配置，使用已保存配置试问。 |

@@ -160,15 +160,10 @@ def frontmost_app() -> dict[str, Any]:
     return _applescript('name of (info for (path to frontmost application))')
 
 
-def open_app(name: str) -> dict[str, Any]:
-    name = name.strip()
-    if not name:
-        return {"error": "empty app name"}
-    if not _command_exists("open"):
-        return {"error": "open not available"}
-    proc = _run(["open", "-a", name], timeout=DEFAULT_TIMEOUT_SECONDS)
+def open_app(bundle_id: str, name: str) -> dict[str, Any]:
+    proc = _run(["/usr/bin/open", "-b", bundle_id], timeout=DEFAULT_TIMEOUT_SECONDS)
     if proc.returncode != 0:
-        return {"error": proc.stderr.strip() or f"failed to open {name}"}
+        return {"error": f"无法打开 {name}，请检查应用是否已安装以及 Bundle ID 是否正确。"}
     return {"opened": name}
 
 

@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, ConfigDict, Field
 
-from . import effects, memory, model_qa, tools, play
+from . import effects, memory, model_qa, play, tool_access, tools
 from .config import API_KEY_ENV, load_settings, save_autonomous_tool_policy
 from .models import (
     ChatRequest,
@@ -54,18 +55,53 @@ def _provider(settings):
     return create_provider(settings)
 
 
-def require_model_admin(authorization: Annotated[str | None, Header()] = None) -> None:
+def require_configured_token(authorization: Annotated[str | None, Header()] = None) -> None:
     if not load_settings().gateway_token:
         raise HTTPException(status_code=403, detail="请先配置 Gateway Token。")
     require_gateway_token(authorization)
 
 
-@app.get("/v1/model-qa", dependencies=[Depends(require_model_admin)])
+class AppRule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=60)
+    bundle_id: str = Field(min_length=1, max_length=160)
+
+
+class AppAllowlist(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    apps: list[AppRule] = Field(max_length=tool_access.MAX_APPS)
+
+
+@app.get("/v1/app-allowlist", dependencies=[Depends(require_configured_token)])
+def get_app_allowlist():
+    return {
+        "apps": tool_access.list_apps(),
+        "presets": [
+            {"name": names[0], "bundle_id": bundle_id}
+            for bundle_id, names in tool_access.PRESETS.items()
+        ],
+    }
+
+
+@app.put("/v1/app-allowlist", dependencies=[Depends(require_configured_token)])
+def update_app_allowlist(payload: AppAllowlist):
+    try:
+        return {"apps": tool_access.save_apps([app.model_dump() for app in payload.apps])}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/v1/tool-activity", dependencies=[Depends(require_configured_token)])
+def get_tool_activity():
+    return {"events": tool_access.recent_events()}
+
+
+@app.get("/v1/model-qa", dependencies=[Depends(require_configured_token)])
 def model_qa_status():
     return model_qa.public_profiles()
 
 
-@app.put("/v1/model-qa/{provider}", dependencies=[Depends(require_model_admin)])
+@app.put("/v1/model-qa/{provider}", dependencies=[Depends(require_configured_token)])
 def configure_model_qa(provider: str, payload: dict[str, Any]):
     try:
         return model_qa.save_profile(provider, payload.get("model"), payload.get("api_key", ""))
@@ -73,7 +109,7 @@ def configure_model_qa(provider: str, payload: dict[str, Any]):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/v1/model-qa/{provider}/test", dependencies=[Depends(require_model_admin)])
+@app.post("/v1/model-qa/{provider}/test", dependencies=[Depends(require_configured_token)])
 async def test_model_qa(provider: str, payload: dict[str, Any]):
     question = payload.get("question")
     if not isinstance(question, str):
@@ -202,10 +238,16 @@ async def chat_with_tools(request: ToolCallRequest) -> ToolCallReply:
     "/v1/tools/{tool_name}",
     dependencies=[Depends(require_gateway_token)],
 )
-async def call_tool(tool_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if tool_name not in {spec.name for spec in tools.all_tools()}:
+async def call_tool(tool_name: str, payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    if not tools.get(tool_name):
         raise HTTPException(status_code=404, detail=f"unknown tool {tool_name!r}")
-    return await tools.execute(tool_name, payload or {})
+    from_bridge = (
+        tool_name in tools.SHARED_TIMER_TOOLS
+        and request.client
+        and request.client.host == "127.0.0.1"
+        and request.headers.get("x-stackchan-source") == "mcp"
+    )
+    return await tools.execute(tool_name, payload, source="mcp" if from_bridge else "http")
 
 
 def _tool_policy_response(*, bridge_restarted: bool = False) -> ToolPolicyResponse:

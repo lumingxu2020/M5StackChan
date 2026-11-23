@@ -18,13 +18,14 @@ import asyncio
 import json
 import logging
 import re
+from time import monotonic
 from abc import ABC, abstractmethod
 from typing import Any, Iterable
 
 from openai import OpenAI
 from pydantic import ValidationError
 
-from . import tools
+from . import tool_access, tools
 from .config import ProviderName, Settings
 from .models import RobotReply, ToolCallLogEntry, ToolCallReply
 
@@ -155,9 +156,11 @@ class ModelProvider(ABC):
                 if not isinstance(arguments, dict):
                     arguments = {}
                 if name in allowed_names:
-                    result = await tools.execute(name, arguments)
+                    result = await tools.execute(name, arguments, source="model")
                 else:
                     result = {"error": "Tool is not authorized"}
+                    if tools.get(name):
+                        await asyncio.to_thread(tool_access.record_event, "model", name, "blocked", monotonic())
                 preview = json.dumps(result, ensure_ascii=False)[:400]
                 log.append(
                     ToolCallLogEntry(

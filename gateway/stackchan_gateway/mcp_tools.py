@@ -25,12 +25,6 @@ load_dotenv()
 
 mcp = FastMCP("StackChan 电脑管家")
 
-_SHARED_TIMER_TOOLS = frozenset({
-    "computer_butler_pomodoro", "computer_butler_timer_set",
-    "computer_butler_timer_list", "computer_butler_timer_cancel",
-})
-
-
 def _parameter_annotation(meta: dict[str, Any]) -> Any:
     type_map: dict[str, Any] = {
         "string": str,
@@ -52,9 +46,11 @@ def _parameter_annotation(meta: dict[str, Any]) -> Any:
 
 def _make_wrapper(spec: tools.ToolSpec):
     async def wrapper(**kwargs: Any) -> dict[str, Any]:
-        if os.getenv("STACKCHAN_MCP_SHARED_TIMERS") == "1" and spec.name in _SHARED_TIMER_TOOLS:
+        if os.getenv("STACKCHAN_MCP_SHARED_TIMERS") == "1" and spec.name in tools.SHARED_TIMER_TOOLS:
             token = load_settings().gateway_token
-            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            headers = {"X-StackChan-Source": "mcp"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
             try:
                 async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
                     response = await client.post(
@@ -66,7 +62,7 @@ def _make_wrapper(spec: tools.ToolSpec):
                     return response.json()
             except (httpx.HTTPError, ValueError):
                 return {"error": "Mac Gateway 不可用，计时器未执行，请检查服务后重试。"}
-        return await tools.execute(spec.name, kwargs)
+        return await tools.execute(spec.name, kwargs, source="mcp")
 
     wrapper.__name__ = f"mcp_{spec.name}"
     wrapper.__doc__ = spec.description

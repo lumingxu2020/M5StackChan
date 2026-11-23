@@ -85,6 +85,16 @@
   .switch input:disabled + .slider { opacity:.55; }
   .timer-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; padding:9px 11px; background:var(--inset); border-radius:8px; }
   .timer-row span { overflow-wrap:anywhere; }
+  .settings-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  .app-row,.activity-row { display:grid; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--line); }
+  .app-row { grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto; }
+  .activity-row { grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr) minmax(0,.8fr); }
+  .app-row code,.activity-row code { min-width:0; overflow-wrap:anywhere; }
+  .activity-result { font-size:13px; }
+  .activity-result[data-outcome="ok"] { color:var(--green); }
+  .activity-result[data-outcome="blocked"] { color:#f3cc85; }
+  .activity-result[data-outcome="failed"] { color:#ffb4a7; }
+  #activity-list { max-height:440px; overflow:auto; }
   @media (max-width:910px) {
     .layout { grid-template-columns:1fr; }
     .rail { position:static; height:auto; display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:12px 18px; border-right:0; border-bottom:1px solid var(--line); }
@@ -102,6 +112,11 @@
     .metrics { gap:6px; }
     .metric { padding:8px; }
     .metric strong { font-size:12px; }
+    .app-row { grid-template-columns:minmax(0,1fr) auto; }
+    .app-row code { grid-row:2; }
+    .app-row button { grid-column:2; grid-row:1 / span 2; }
+    .activity-row { grid-template-columns:minmax(0,1fr) minmax(0,.65fr); }
+    .activity-row time { grid-column:1 / -1; }
   }
   @media (max-width:380px) {
     .form-grid,.tool-filters { grid-template-columns:1fr; }
@@ -120,6 +135,8 @@
       <a href="#chat-panel">对话测试</a>
       <a href="#model-qa">多模型问答</a>
       <a href="#tool-panel">工具授权</a>
+      <a href="#app-access">应用白名单</a>
+      <a href="#activity-panel">调用记录</a>
       <a href="#timer-panel">计时器</a>
     </nav>
   </aside>
@@ -185,6 +202,35 @@
           </select>
         </div>
         <div id="tools-list"></div>
+      </section>
+      <section id="app-access" class="card wide">
+        <h2>应用白名单</h2>
+        <p class="muted">开启「打开 App」工具后，只能启动这里列出的应用。网页、Finder 文件夹和备忘录使用各自的工具开关。</p>
+        <p id="app-status" class="muted status-line" role="status">输入 Gateway Token 后管理白名单。</p>
+        <fieldset id="app-fields" disabled hidden>
+          <div id="app-list" class="status-line"></div>
+          <div class="toolbar">
+            <select id="app-preset" aria-label="常用应用"></select>
+            <button id="app-add-preset">添加常用应用</button>
+          </div>
+          <form id="app-add-form">
+            <div class="form-grid">
+              <label class="field">自定义应用名称<input id="app-name" maxlength="60" required></label>
+              <label class="field">Bundle ID<input id="app-bundle" maxlength="160" placeholder="如 com.apple.Safari" required></label>
+            </div>
+            <div class="toolbar"><button type="submit">添加自定义应用</button></div>
+          </form>
+          <div class="toolbar"><button id="app-save" class="primary" disabled>保存白名单</button></div>
+        </fieldset>
+      </section>
+      <section id="activity-panel" class="card wide">
+        <div class="settings-row">
+          <h2>调用记录</h2>
+          <button id="activity-refresh" disabled>刷新记录</button>
+        </div>
+        <p class="muted">显示小智、网关模型及直接 API 的最近 200 次工具调用。</p>
+        <p id="activity-status" class="muted status-line" role="status">输入 Gateway Token 后查看记录。</p>
+        <div id="activity-list" class="status-line"></div>
       </section>
     </div>
   </main>
@@ -446,12 +492,148 @@ async function runModelAction(test) {
 }
 qa("qa-save").onclick = () => runModelAction(false);
 qa("qa-test").onclick = () => runModelAction(true);
+
+let appDraft = [];
+let appPresets = [];
+const appStatus = document.getElementById("app-status");
+const appFields = document.getElementById("app-fields");
+const appSave = document.getElementById("app-save");
+
+function renderApps(dirty = false) {
+  const list = document.getElementById("app-list");
+  list.replaceChildren();
+  for (const [index, app] of appDraft.entries()) {
+    const row = document.createElement("div");
+    row.className = "app-row";
+    const name = document.createElement("span");
+    name.textContent = app.name;
+    const bundle = document.createElement("code");
+    bundle.textContent = app.bundle_id;
+    const remove = document.createElement("button");
+    remove.textContent = "移除";
+    remove.setAttribute("aria-label", "移除 " + app.name);
+    remove.onclick = () => {
+      appDraft.splice(index, 1);
+      renderApps(true);
+    };
+    row.append(name, bundle, remove);
+    list.appendChild(row);
+  }
+  const select = document.getElementById("app-preset");
+  const remaining = appPresets.filter(preset => !appDraft.some(app => app.bundle_id.toLowerCase() === preset.bundle_id.toLowerCase()));
+  select.replaceChildren(...remaining.map(app => new Option(app.name, app.bundle_id)));
+  document.getElementById("app-add-preset").disabled = !remaining.length;
+  appSave.disabled = !dirty;
+  appStatus.textContent = dirty ? "有未保存的修改。" : appDraft.length + " 个应用获准启动。";
+}
+
+async function loadAppAllowlist() {
+  appFields.disabled = true;
+  appFields.hidden = true;
+  document.getElementById("app-list").replaceChildren();
+  document.getElementById("app-add-form").reset();
+  try {
+    const body = await fetchJson("/v1/app-allowlist");
+    appDraft = body.apps;
+    appPresets = body.presets;
+    renderApps();
+    appFields.disabled = false;
+    appFields.hidden = false;
+  } catch {
+    appStatus.textContent = token ? "无法读取白名单，请检查 Token。" : "输入 Gateway Token 后管理白名单。";
+  }
+}
+
+function addApp(app) {
+  if (!app.name || !app.bundle_id) {
+    appStatus.textContent = "请输入应用名称和 Bundle ID。";
+    return false;
+  }
+  if (appDraft.length >= 40 || appDraft.some(item =>
+    item.bundle_id.toLowerCase() === app.bundle_id.toLowerCase() || item.name.toLowerCase() === app.name.toLowerCase()
+  )) {
+    appStatus.textContent = "应用名称或 Bundle ID 已存在，或白名单已满。";
+    return false;
+  }
+  appDraft.push(app);
+  renderApps(true);
+  return true;
+}
+
+document.getElementById("app-add-preset").onclick = () => {
+  const preset = appPresets.find(app => app.bundle_id === document.getElementById("app-preset").value);
+  if (preset) addApp(preset);
+};
+document.getElementById("app-add-form").onsubmit = event => {
+  event.preventDefault();
+  if (addApp({
+    name: document.getElementById("app-name").value.trim(),
+    bundle_id: document.getElementById("app-bundle").value.trim(),
+  })) event.currentTarget.reset();
+};
+appSave.onclick = async () => {
+  appFields.disabled = true;
+  appStatus.textContent = "正在保存白名单…";
+  try {
+    const response = await fetch("/v1/app-allowlist", {
+      method: "PUT",
+      headers: {...headers, "Content-Type": "application/json"},
+      body: JSON.stringify({apps: appDraft}),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "请检查应用名称、Bundle ID 和 Token。");
+    appDraft = body.apps;
+    renderApps();
+    appStatus.textContent += " 已保存。";
+  } catch (error) {
+    appStatus.textContent = error.message;
+  } finally {
+    appFields.disabled = false;
+  }
+};
+
+async function loadActivity() {
+  const list = document.getElementById("activity-list");
+  const status = document.getElementById("activity-status");
+  const refresh = document.getElementById("activity-refresh");
+  refresh.disabled = true;
+  list.replaceChildren();
+  status.textContent = "正在读取调用记录…";
+  try {
+    const {events} = await fetchJson("/v1/tool-activity");
+    const sources = {mcp: "小智 / MCP", model: "网关模型", http: "直接 API"};
+    const results = {ok: "完成", failed: "失败", blocked: "已拦截"};
+    for (const event of events) {
+      const row = document.createElement("div");
+      row.className = "activity-row";
+      const time = document.createElement("time");
+      time.className = "muted";
+      time.dateTime = event.at;
+      time.textContent = new Date(event.at).toLocaleString() + " · " + sources[event.source];
+      const tool = document.createElement("code");
+      tool.textContent = event.tool;
+      const result = document.createElement("span");
+      result.className = "activity-result";
+      result.dataset.outcome = event.outcome;
+      result.textContent = results[event.outcome] + " · " + event.duration_ms + " 毫秒";
+      row.append(time, tool, result);
+      list.appendChild(row);
+    }
+    status.textContent = events.length ? events.length + " 条记录" : "暂无工具调用记录。";
+  } catch {
+    status.textContent = token ? "无法读取调用记录，请检查 Token。" : "输入 Gateway Token 后查看记录。";
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
+document.getElementById("activity-refresh").onclick = loadActivity;
 document.getElementById("save-token").onclick = () => {
   token = document.getElementById("token").value.trim();
   if (token) sessionStorage.setItem("stackchanGatewayToken", token);
   else sessionStorage.removeItem("stackchanGatewayToken");
   headers = token ? {Authorization: "Bearer " + token} : {};
-  loadPolicy(); loadTimers(); loadModelProfiles();
+  loadPolicy(); loadTimers(); loadModelProfiles(); loadAppAllowlist(); loadActivity();
 };
 document.getElementById("preset-safe").onclick = () => policyState && savePolicy(new Set(policyState.safe_default_tools));
 document.getElementById("preset-none").onclick = () => policyState && savePolicy(new Set());
@@ -460,7 +642,7 @@ document.getElementById("preset-all").onclick = () => {
     savePolicy(new Set(policyState.tools.map(tool => tool.name)));
   }
 };
-loadStatus(); loadPolicy(); loadTimers(); loadModelProfiles();
+loadStatus(); loadPolicy(); loadTimers(); loadModelProfiles(); loadAppAllowlist(); loadActivity();
 function updateNavigation() {
   const hash = location.hash || "#overview";
   document.querySelectorAll(".rail nav a").forEach(link => {
