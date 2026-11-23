@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StackChan Mac Gateway</title>
+<style>
+  :root {
+    color-scheme:dark;
+    --bg:#0a101b; --surface:#111c2c; --inset:#0c1523; --line:#26364b;
+    --text:#edf5ff; --muted:#a5b6ce; --cyan:#6fe3f5; --green:#83e7bb;
+    --mono:ui-monospace,"SFMono-Regular",Consolas,monospace;
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+  }
+  *, *::before, *::after { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; color:var(--text); background:var(--bg); }
+  a { color:inherit; }
+  h1,h2,h3,p,pre { margin:0; }
+  h2 { font-size:20px; line-height:1.35; }
+  h3 { font-size:14px; }
+  button,input,select,textarea { font:inherit; }
+  button,a,input,select,textarea { -webkit-tap-highlight-color:transparent; }
+  :focus-visible { outline:2px solid var(--cyan); outline-offset:3px; }
+  section { scroll-margin-top:20px; }
+  .layout { display:grid; grid-template-columns:218px minmax(0,1fr); min-height:100vh; }
+  .rail { position:sticky; top:0; height:100vh; align-self:start; padding:26px 18px; border-right:1px solid var(--line); background:#0d1624; }
+  .brand { display:flex; align-items:center; gap:11px; text-decoration:none; margin-bottom:38px; font-size:17px; font-weight:700; }
+  .mark { display:grid; place-items:center; width:36px; height:36px; border:1px solid #336178; border-radius:10px; background:#102e3c; color:var(--cyan); font:700 16px var(--mono); }
+  .rail nav { display:grid; gap:5px; }
+  .rail nav a { color:var(--muted); padding:9px 12px; border-radius:8px; text-decoration:none; white-space:nowrap; }
+  .rail nav a:hover,.rail nav a[aria-current] { color:var(--cyan); background:#14283b; }
+  main { width:min(100%,1400px); min-width:0; margin:auto; padding:30px clamp(18px,4vw,56px) 52px; }
+  .topline { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:15px; flex-wrap:wrap; }
+  .caption { font:600 11px/1.4 var(--mono); letter-spacing:.14em; color:var(--muted); }
+  .health { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+  .health::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .health[data-state="online"] { color:var(--green); }
+  .health[data-state="offline"] { color:#ffb4a7; }
+  .hero { position:relative; overflow:hidden; isolation:isolate; padding:clamp(20px,4vw,36px); border:1px solid #30445e; border-radius:20px;
+    background:linear-gradient(115deg,#111e32,#132539 60%,#102e3a); }
+  .hero::before { content:""; position:absolute; inset:0; z-index:-1; opacity:.23;
+    background-image:linear-gradient(#568897 1px,transparent 1px),linear-gradient(90deg,#568897 1px,transparent 1px);
+    background-size:27px 27px; mask-image:linear-gradient(90deg,transparent 28%,#000); }
+  .hero h1 { font-size:clamp(27px,4.2vw,49px); line-height:1.14; letter-spacing:-.035em; }
+  .hero p { color:var(--muted); margin-top:10px; }
+  .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:24px; }
+  .metric { background:#0c1727; border:1px solid #2e445c; border-radius:11px; padding:10px 13px; min-width:0; }
+  .metric span { display:block; color:var(--muted); font-size:12px; }
+  .metric strong { font:600 15px/1.45 var(--mono); color:var(--cyan); overflow-wrap:anywhere; }
+  .cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:16px; align-items:start; }
+  .card { min-width:0; padding:20px; border-radius:15px; border:1px solid var(--line); background:var(--surface); }
+  .wide { grid-column:1 / -1; }
+  .access { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+  .access-controls { display:flex; gap:8px; flex:0 1 410px; }
+  .access-controls input { flex:1; }
+  .muted { color:var(--muted); font-size:13px; }
+  .card h2 + p { margin-top:5px; }
+  label.field { display:grid; gap:6px; color:var(--muted); font-size:13px; margin-top:12px; }
+  input:not([type=checkbox]),select,textarea { display:block; width:100%; min-width:0; color:var(--text); background:var(--inset); border:1px solid #32445b; border-radius:8px; padding:8px 10px; }
+  textarea { resize:vertical; min-height:64px; }
+  fieldset { padding:0; min-width:0; margin:0; border:0; }
+  .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 10px; }
+  button { border:1px solid #3a4e67; border-radius:8px; background:#19283c; color:var(--text); padding:7px 11px; cursor:pointer; font-size:13px; }
+  button:hover:enabled { background:#223953; }
+  button.primary { background:var(--cyan); color:#0a2029; border-color:var(--cyan); font-weight:700; }
+  button.primary:hover:enabled { background:#a1f2ff; }
+  button:disabled { opacity:.53; cursor:default; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; }
+  .status-line { margin-top:10px; }
+  pre { padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--inset); font:12px/1.6 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; }
+  #model-qa-output { margin-top:10px; }
+  .tool-filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(9rem,.4fr); gap:8px; margin-top:14px; }
+  .tool-section { margin-top:18px; }
+  .tool-section h3 { color:var(--cyan); margin-bottom:6px; }
+  .tool-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.55fr) auto; align-items:center; gap:12px; padding:9px 0; border-top:1px solid var(--line); }
+  .tool-name { font:12px/1.5 var(--mono); overflow-wrap:anywhere; }
+  .switch { position:relative; display:inline-block; width:42px; height:25px; }
+  .switch input { position:absolute; opacity:0; inset:0; margin:0; width:100%; height:100%; cursor:pointer; }
+  .slider { position:absolute; inset:0; pointer-events:none; border-radius:999px; background:#334760; transition:background .16s; }
+  .slider::before { content:""; position:absolute; width:17px; height:17px; left:4px; top:4px; border-radius:50%; background:#d9e6f8; transition:transform .16s; }
+  .switch input:checked + .slider { background:#277487; }
+  .switch input:checked + .slider::before { transform:translateX(17px); background:#baf6ff; }
+  .switch input:focus-visible + .slider { outline:2px solid var(--cyan); outline-offset:3px; }
+  .switch input:disabled + .slider { opacity:.55; }
+  .timer-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; padding:9px 11px; background:var(--inset); border-radius:8px; }
+  .timer-row span { overflow-wrap:anywhere; }
+  @media (max-width:910px) {
+    .layout { grid-template-columns:1fr; }
+    .rail { position:static; height:auto; display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:12px 18px; border-right:0; border-bottom:1px solid var(--line); }
+    .brand { margin:0; }
+    .rail nav { display:flex; flex-wrap:wrap; gap:2px; }
+    .rail nav a { padding:6px 8px; font-size:13px; }
+  }
+  @media (max-width:660px) {
+    main { padding:18px 12px 36px; }
+    .cards { grid-template-columns:1fr; gap:12px; margin-top:12px; }
+    .card { padding:15px; }
+    .access-controls { flex-basis:100%; }
+    .tool-row { grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; }
+    .tool-description { grid-column:1 / -1; grid-row:2; }
+    .metrics { gap:6px; }
+    .metric { padding:8px; }
+    .metric strong { font-size:12px; }
+  }
+  @media (max-width:380px) {
+    .form-grid,.tool-filters { grid-template-columns:1fr; }
+    .access-controls { flex-wrap:wrap; }
+    .access-controls input { flex-basis:100%; }
+  }
+  @media (prefers-reduced-motion:reduce) { *, *::before { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="rail">
+    <a class="brand" href="#overview"><span class="mark" aria-hidden="true">SC</span> StackChan</a>
+    <nav aria-label="控制台导航">
+      <a href="#overview">总览</a>
+      <a href="#chat-panel">对话测试</a>
+      <a href="#model-qa">多模型问答</a>
+      <a href="#tool-panel">工具授权</a>
+      <a href="#timer-panel">计时器</a>
+    </nav>
+  </aside>
+  <main>
+    <div class="topline">
+      <span class="caption">MAC GATEWAY / 控制台</span>
+      <span id="health-state" class="health" role="status">正在检查网关</span>
+    </div>
+    <section id="overview" class="hero">
+      <h1>StackChan Mac Gateway</h1>
+      <p>在 Mac 上管理模型、语音工具和计时器。</p>
+      <div id="status" class="metrics" aria-label="网关状态">
+        <div class="metric"><span>运行模式</span><strong id="metric-mode">—</strong></div>
+        <div class="metric"><span>默认模型</span><strong id="metric-model">—</strong></div>
+        <div class="metric"><span>已授权工具</span><strong id="metric-tools">—</strong></div>
+      </div>
+    </section>
+    <div class="cards">
+      <section class="card wide access" aria-labelledby="access-title">
+        <div><h2 id="access-title">访问凭据</h2><p class="muted">Gateway Token 仅保存在当前标签页。</p></div>
+        <div class="access-controls">
+          <input id="token" type="password" autocomplete="off" aria-label="Gateway Token" placeholder="Gateway Token">
+          <button id="save-token">应用 Token</button>
+        </div>
+      </section>
+      <section id="chat-panel" class="card">
+        <h2>对话测试</h2>
+        <p class="muted">测试默认模型，或允许它调用已授权工具。</p>
+        <label class="field">消息<textarea id="msg" rows="3" maxlength="2000">你好，Jammy</textarea></label>
+        <div class="toolbar"><button class="primary" id="send">发送消息</button><button id="tools">带工具发送</button></div>
+        <pre id="out" aria-live="polite">等待测试消息</pre>
+      </section>
+      <section id="model-qa" class="card">
+        <h2>多模型问答</h2>
+        <p class="muted">Jammy 语音调用需要启用 <code>ask_model</code>。</p>
+        <fieldset id="qa-fields" disabled>
+          <div class="form-grid">
+            <label class="field">服务商<select id="qa-provider"></select></label>
+            <label class="field">模型 ID<input id="qa-model" maxlength="160" autocomplete="off"></label>
+          </div>
+          <label class="field" id="qa-key-field">API Key<input id="qa-key" type="password" maxlength="1024" autocomplete="new-password" placeholder="留空沿用已有密钥"></label>
+          <label class="field">试问内容<textarea id="qa-question" rows="2" maxlength="2000">请用一句话介绍你自己。</textarea></label>
+          <div class="toolbar"><button id="qa-save">保存配置</button><button id="qa-test">试问已保存模型</button></div>
+        </fieldset>
+        <p id="qa-status" role="status" class="muted status-line">请输入 Gateway Token。</p>
+        <pre id="model-qa-output" hidden></pre>
+      </section>
+      <section id="timer-panel" class="card wide">
+        <h2>计时器</h2>
+        <p id="timer-status" class="muted status-line" role="status">正在读取计时器…</p>
+        <div id="timers"></div>
+      </section>
+      <section id="tool-panel" class="card wide">
+        <h2>Jammy 功能开关</h2>
+        <p class="muted">控制小智和网关模型可以自主调用哪些工具。</p>
+        <div class="toolbar"><button id="preset-safe" disabled>恢复安全默认</button><button id="preset-none" disabled>全部关闭</button><button id="preset-all" disabled>全部开启</button></div>
+        <p id="policy-status" role="status" class="muted">请输入 Gateway Token 后加载开关。</p>
+        <div class="tool-filters" id="tool-filters" hidden>
+          <input id="tool-query" type="search" aria-label="搜索工具" placeholder="搜索工具名称或用途">
+          <select id="tool-category" aria-label="工具分类">
+            <option value="">全部分类</option><option value="info">信息查询</option>
+            <option value="control">Mac 控制</option><option value="playful">娱乐与计算</option>
+          </select>
+        </div>
+        <div id="tools-list"></div>
+      </section>
+    </div>
+  </main>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const queryToken = params.get("token") || "";
+if (queryToken) {
+  sessionStorage.setItem("stackchanGatewayToken", queryToken);
+  history.replaceState(null, "", location.pathname);
+}
+let token = sessionStorage.getItem("stackchanGatewayToken") || "";
+let headers = token ? {Authorization: "Bearer " + token} : {};
+let policyState = null;
+let policyBusy = false;
+document.getElementById("token").value = token;
+
+async function fetchJson(url, opts) {
+  const response = await fetch(url, Object.assign({headers}, opts || {}));
+  if (!response.ok) throw new Error(url + " " + response.status);
+  return response.json();
+}
+
+async function loadStatus() {
+  const indicator = document.getElementById("health-state");
+  try {
+    const body = await fetchJson("/health");
+    document.getElementById("metric-mode").textContent = body.mode === "mock" ? "模拟" : "实时";
+    document.getElementById("metric-model").textContent = body.model;
+    document.getElementById("metric-tools").textContent = body.autonomous_tools.length + " / " + body.tools.length;
+    indicator.dataset.state = body.configured ? "online" : "";
+    indicator.textContent = body.configured ? "网关在线" : "网关在线 · 模型待配置";
+  } catch {
+    indicator.dataset.state = "offline";
+    indicator.textContent = "网关不可用";
+  }
+}
+
+function setPolicyBusy(busy) {
+  policyBusy = busy;
+  document.querySelectorAll("input[data-tool], #preset-safe, #preset-none, #preset-all").forEach(node => {
+    node.disabled = busy || !policyState;
+  });
+}
+
+function renderPolicy(body) {
+  policyState = body;
+  document.getElementById("tool-filters").hidden = false;
+  renderTools();
+  document.getElementById("policy-status").textContent = `白名单模式：${body.mode} · 已开启 ${body.enabled_tools.length}/${body.tools.length} · MCP ${body.bridge_restarted ? "已重新加载" : "当前配置"}`;
+}
+
+function renderTools() {
+  if (!policyState) return;
+  const list = document.getElementById("tools-list");
+  const query = document.getElementById("tool-query").value.trim().toLowerCase();
+  const category = document.getElementById("tool-category").value;
+  list.replaceChildren();
+  const categories = {info: [], control: [], playful: []};
+  for (const tool of policyState.tools) {
+    if (category && category !== tool.category) continue;
+    if (query && !`${tool.name} ${tool.description}`.toLowerCase().includes(query)) continue;
+    categories[tool.category]?.push(tool);
+  }
+  const labels = {info: "信息查询", control: "Mac 控制", playful: "娱乐与计算"};
+  for (const [key, entries] of Object.entries(categories)) {
+    if (!entries.length) continue;
+    const sec = document.createElement("div");
+    sec.className = "tool-section";
+    const heading = document.createElement("h3");
+    heading.textContent = labels[key];
+    sec.appendChild(heading);
+    for (const tool of entries) {
+      const row = document.createElement("div");
+      row.className = "tool-row";
+      const name = document.createElement("div");
+      name.className = "tool-name";
+      name.textContent = tool.name;
+      const description = document.createElement("div");
+      description.className = "tool-description muted";
+      description.textContent = tool.description;
+      const toggle = document.createElement("label");
+      toggle.className = "switch";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = tool.enabled;
+      input.dataset.tool = tool.name;
+      input.setAttribute("aria-label", `允许 Jammy 调用 ${tool.name}`);
+      input.addEventListener("change", () => updateOneTool(tool.name, input.checked));
+      const slider = document.createElement("span");
+      slider.className = "slider";
+      toggle.append(input, slider);
+      row.append(name, description, toggle);
+      sec.appendChild(row);
+    }
+    list.appendChild(sec);
+  }
+  if (!list.childElementCount) {
+    const empty = document.createElement("p");
+    empty.className = "muted status-line";
+    empty.textContent = "没有符合条件的工具。";
+    list.appendChild(empty);
+  }
+  setPolicyBusy(policyBusy);
+}
+
+document.getElementById("tool-query").addEventListener("input", renderTools);
+document.getElementById("tool-category").addEventListener("change", renderTools);
+
+async function loadPolicy() {
+  try {
+    renderPolicy(await fetchJson("/v1/tool-policy"));
+  } catch (error) {
+    policyState = null;
+    document.getElementById("tools-list").replaceChildren();
+    document.getElementById("tool-filters").hidden = true;
+    setPolicyBusy(false);
+    document.getElementById("policy-status").textContent = token ? "Token 无效或服务不可用。" : "请输入 Gateway Token 后加载开关。";
+  }
+}
+
+async function savePolicy(enabled) {
+  setPolicyBusy(true);
+  try {
+    const body = await fetchJson("/v1/tool-policy", {method: "PUT", headers: Object.assign({"Content-Type": "application/json"}, headers), body: JSON.stringify({enabled_tools: [...enabled]})});
+    renderPolicy(body);
+    await loadStatus();
+  } catch (error) {
+    await loadPolicy();
+    if (policyState) document.getElementById("policy-status").textContent = "未能保存开关，已重新读取当前设置。";
+  } finally {
+    setPolicyBusy(false);
+  }
+}
+
+function updateOneTool(name, enabled) {
+  if (!policyState) return;
+  const next = new Set(policyState.enabled_tools);
+  if (enabled) next.add(name); else next.delete(name);
+  savePolicy(next);
+}
+
+async function loadTimers() {
+  const container = document.getElementById("timers");
+  const status = document.getElementById("timer-status");
+  try {
+    const body = await fetchJson("/v1/timers");
+    container.replaceChildren();
+    status.textContent = body.active.length ? body.active.length + " 个运行中的计时器" : "目前没有运行中的计时器。";
+    for (const timer of body.active) {
+      const row = document.createElement("div");
+      row.className = "timer-row";
+      const label = document.createElement("span");
+      label.textContent = `${timer.label} · 剩余 ${timer.remaining_seconds} 秒`;
+      const button = document.createElement("button");
+      button.textContent = "取消";
+      button.addEventListener("click", () => cancelTimer(String(timer.timer_id)));
+      row.append(label, button);
+      container.appendChild(row);
+    }
+  } catch (e) {
+    container.replaceChildren();
+    status.textContent = token ? "无法读取计时器，请检查 Token。" : "输入 Gateway Token 后查看计时器。";
+  }
+}
+
+async function cancelTimer(id) {
+  try {
+    await fetchJson("/v1/timers/" + encodeURIComponent(id), {method: "DELETE"});
+    await loadTimers();
+  } catch {
+    document.getElementById("timer-status").textContent = "取消失败，请检查 Token 和网关状态。";
+  }
+}
+
+async function sendMessage(useTools) {
+  const message = document.getElementById("msg").value.trim();
+  if (!message) return;
+  const url = useTools ? "/v1/chat/tools" : "/v1/chat";
+  const output = document.getElementById("out");
+  const buttons = [document.getElementById("send"), document.getElementById("tools")];
+  buttons.forEach(button => { button.disabled = true; });
+  output.textContent = "等待模型回复…";
+  try {
+    const body = await fetchJson(url, {method: "POST", headers: {"Content-Type": "application/json", ...headers}, body: JSON.stringify({message, session_id: "dashboard"})});
+    output.textContent = JSON.stringify(body, null, 2);
+    await loadTimers();
+  } catch {
+    output.textContent = "请求失败，请检查 Gateway Token、模型配置和网络。";
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+}
+
+document.getElementById("send").onclick = () => sendMessage(false);
+document.getElementById("tools").onclick = () => sendMessage(true);
+const qa = id => document.getElementById(id);
+let qaProfiles = [];
+
+function showModelProfile() {
+  const profile = qaProfiles.find(item => item.provider === qa("qa-provider").value);
+  if (!profile) return;
+  qa("qa-model").value = profile.model;
+  qa("qa-key").value = "";
+  qa("qa-key-field").hidden = !profile.requires_key;
+  qa("qa-test").disabled = !profile.ready;
+  qa("model-qa-output").hidden = true;
+  qa("qa-status").textContent = profile.ready ? "已配置，可试问。" : "请保存模型 ID 和所需的密钥。";
+}
+
+async function loadModelProfiles() {
+  const select = qa("qa-provider");
+  const previous = select.value;
+  qa("qa-fields").disabled = true;
+  qa("qa-key").value = "";
+  qa("model-qa-output").hidden = true;
+  try {
+    qaProfiles = await fetchJson("/v1/model-qa");
+    select.replaceChildren(...qaProfiles.map(item => new Option(item.label, item.provider)));
+    if (previous) select.value = previous;
+    showModelProfile();
+    qa("qa-fields").disabled = false;
+  } catch {
+    qa("qa-status").textContent = "请输入有效的 Gateway Token 后加载配置。";
+  }
+}
+
+qa("qa-provider").onchange = showModelProfile;
+async function runModelAction(test) {
+  const provider = qa("qa-provider").value;
+  const output = qa("model-qa-output");
+  const payload = test
+    ? {question: qa("qa-question").value.trim()}
+    : {model: qa("qa-model").value.trim(), api_key: qa("qa-key").value.trim()};
+  qa("qa-fields").disabled = true;
+  output.hidden = true;
+  qa("qa-status").textContent = test ? "正在等待模型回答…" : "正在保存…";
+  try {
+    const response = await fetch("/v1/model-qa/" + provider + (test ? "/test" : ""), {
+      method: test ? "POST" : "PUT",
+      headers: {...headers, "Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+    if (!response.ok || body.error) throw new Error(body.error || (typeof body.detail === "string" ? body.detail : "请求失败"));
+    if (test) {
+      output.textContent = body.answer;
+      output.hidden = false;
+      qa("qa-status").textContent = body.mock ? "模拟回答" : body.model + " · " + body.latency_ms + " 毫秒";
+    } else {
+      qaProfiles = body;
+      showModelProfile();
+    }
+  } catch (error) {
+    qa("qa-status").textContent = error.message;
+  } finally {
+    qa("qa-fields").disabled = false;
+  }
+}
+qa("qa-save").onclick = () => runModelAction(false);
+qa("qa-test").onclick = () => runModelAction(true);
+document.getElementById("save-token").onclick = () => {
+  token = document.getElementById("token").value.trim();
+  if (token) sessionStorage.setItem("stackchanGatewayToken", token);
+  else sessionStorage.removeItem("stackchanGatewayToken");
+  headers = token ? {Authorization: "Bearer " + token} : {};
+  loadPolicy(); loadTimers(); loadModelProfiles();
+};
+document.getElementById("preset-safe").onclick = () => policyState && savePolicy(new Set(policyState.safe_default_tools));
+document.getElementById("preset-none").onclick = () => policyState && savePolicy(new Set());
+document.getElementById("preset-all").onclick = () => {
+  if (policyState && window.confirm("全部开启会允许 Jammy 读取剪贴板、日历和提醒事项，并控制 Mac。确定继续吗？")) {
+    savePolicy(new Set(policyState.tools.map(tool => tool.name)));
+  }
+};
+loadStatus(); loadPolicy(); loadTimers(); loadModelProfiles();
+function updateNavigation() {
+  const hash = location.hash || "#overview";
+  document.querySelectorAll(".rail nav a").forEach(link => {
+    if (link.hash === hash) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  });
+}
+window.addEventListener("hashchange", updateNavigation);
+updateNavigation();
+</script>
+</body>
+</html>
