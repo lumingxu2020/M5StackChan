@@ -1,0 +1,10 @@
+fastapi>=0.115,<1
+httpx>=0.27,<1
+mcp==1.26.0
+openai>=2,<3
+pydantic>=2.10,<3
+python-dotenv>=1,<2
+pytest>=8,<10
+uvicorn[standard]>=0.34,<1
+websockets>=11,<18
+python-socks[asyncio]>=2.4,<3
